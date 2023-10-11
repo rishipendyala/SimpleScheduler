@@ -238,6 +238,18 @@ int main()
     char userInput[1000];
     signal(SIGINT, exit_loop);
 
+    // Code for input of NCPU, TSLICE
+    
+    int NCPU;
+    int TSLICE;
+
+    printf("Enter number of CPUs:\n");
+    scanf("%d", &NCPU);
+    printf("Enter time slice:\n");
+    scanf("%d", &NCPU);
+
+    printf("NCPU = %d and TSLICE = %d",NCPU,TSLICE);
+
     do
     {
         printf("> ");
