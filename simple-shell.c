@@ -166,7 +166,10 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
         execInfo processInfo;
         clock_t start_time;
         clock_t end_time;
-        time(&processInfo.timeExecuted);
+        time_t time_result = time(&processInfo.timeExecuted);
+        if (time_result == -1){
+            printf("Error with reading time\n");
+        }
         start_time = clock();
         int ret;
         int pid = wait(&ret);
@@ -239,7 +242,7 @@ int main()
     signal(SIGINT, exit_loop);
 
     // Code for input of NCPU, TSLICE
-    
+
     int NCPU;
     int TSLICE;
 

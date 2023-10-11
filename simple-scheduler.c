@@ -164,7 +164,7 @@ void resumeProcess(int pid)
     }
     else
     {
-        perror("Error resuming process");
+        printf("Error resuming process\n");
     }
 }
 
