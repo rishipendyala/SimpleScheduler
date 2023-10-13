@@ -84,6 +84,7 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
     {
         char *new_args[1000];
         int j = 0;
+
         while (i < argscount)
         {
             if (strcmp(args[i], "|") == 0)
@@ -135,7 +136,9 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
             }
             else
             {
-
+                // for (int i = 0; i < 10; i++) {
+                //     printf("%s\n", args[i]);
+                // }
                 int executionStatus = execvp(new_args[0], new_args);
                 if (executionStatus == -1)
                 {
@@ -167,7 +170,8 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
         clock_t start_time;
         clock_t end_time;
         time_t time_result = time(&processInfo.timeExecuted);
-        if (time_result == -1){
+        if (time_result == -1)
+        {
             printf("Error with reading time\n");
         }
         start_time = clock();
@@ -189,24 +193,74 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
     return 1;
 }
 
+// void launch(char *userInput)
+// {
+//     char *args[1000] = {NULL};
+//     char *token = strtok(userInput, " ");
+
+//     int count = 0;
+//     while (token != NULL && count < 999)
+//     {
+//         args[count] = token;
+//         token = strtok(NULL, " ");
+//         count++;
+//     }
+
+//     if (args[0] != NULL)
+//     {
+//         int pipeCount = countPipes(args, count);
+//         int isExecuted = create_process_and_run(args, pipeCount, count);
+//         if (isExecuted)
+//         {
+//             if (currentHistory < 1000)
+//             {
+//                 strcpy(historyArray[currentHistory], userInput);
+//                 currentHistory++;
+//             }
+//             else
+//             {
+//                 printf("Maximum history size reached!!\n");
+//             }
+//         }
+//         else
+//         {
+//             printf("Command execution failed!\n");
+//         }
+//     }
+//     else
+//     {
+//         printf("\n");
+//     }
+// }
+
 void launch(char *userInput)
 {
-    char *args[1000];
-    char *token = strtok(userInput, " ");
-
+    char *args[1000] = {NULL};
+    char *token = strtok(userInput, " \n\t\r\a\"");
     int count = 0;
+    printf("Token print :- %s\n", token);
+
     while (token != NULL && count < 999)
     {
-        args[count] = token;
-        token = strtok(NULL, " ");
-        count++;
+        if (strlen(token) > 0)
+        { // Check if the token is not empty
+            args[count] = token;
+            count++;
+        }
+        token = strtok(NULL, " \n\t\r\a\"");
+        printf("Token print :- %s\n", token);
     }
-    args[count] = NULL;
+    // if (token != NULL){
+    // free(token);
+
+    // };
+
 
     if (args[0] != NULL)
     {
         int pipeCount = countPipes(args, count);
         int isExecuted = create_process_and_run(args, pipeCount, count);
+
         if (isExecuted)
         {
             if (currentHistory < 1000)
@@ -228,6 +282,7 @@ void launch(char *userInput)
     {
         printf("\n");
     }
+    // free(args);
 }
 
 void exit_loop()
@@ -238,33 +293,49 @@ void exit_loop()
 
 int main()
 {
-    char userInput[1000];
+
     signal(SIGINT, exit_loop);
 
     // Code for input of NCPU, TSLICE
 
-    int NCPU;
-    int TSLICE;
+    // int NCPU;
+    // int TSLICE;
 
-    printf("Enter number of CPUs:\n");
-    scanf("%d", &NCPU);
-    printf("Enter time slice:\n");
-    scanf("%d", &NCPU);
+    // printf("Enter number of CPUs:\n");
+    // scanf("%d", &NCPU);
+    // printf("Enter time slice:\n");
+    // scanf("%d", &NCPU);
 
-    printf("NCPU = %d and TSLICE = %d",NCPU,TSLICE);
+    // printf("NCPU = %d and TSLICE = %d",NCPU,TSLICE);
 
+    char userInput[1000];
+    char cwd[1024];
     do
     {
-        printf("> ");
-        fgets(userInput, sizeof(userInput), stdin);
+        // for (int i =0; i<1000;  i++){
+        //     printf("Argument %d is %s ",i, userInput[i]);
+        // }
 
-        // terminate input by replacing newline with null character
-        int len = strlen(userInput);
-        if (len > 0 && userInput[len - 1] == '\n')
+        printf("%s> ", getcwd(cwd, sizeof(cwd)));
+        if (fgets(userInput, sizeof(userInput), stdin) == NULL)
         {
-            userInput[len - 1] = '\0';
+            break; // Handle EOF or fgets error
         }
 
+        // printf("Before string :- %s\n", userInput);
+
+        // terminate input by replacing newline with null character
+        // int len = strlen(userInput);
+        // if (len > 0 && userInput[len - 1] == '\n')
+        // {
+        //     // printf("Here\n");
+        //     userInput[len - 1] = '\0';
+        // }
+
+        // printf("After string :- %s\n", userInput);
+        // for (int i = 0; i < strlen(userInput); i++){
+        //     printf("char %c\n", userInput[i]);
+        // }
         launch(userInput);
         printf("\n");
 
