@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <time.h>
 
+// structure that stores the information of the child process
 typedef struct execInfo
 {
     int pid;
@@ -15,23 +16,18 @@ typedef struct execInfo
     int exitStatus;
 } execInfo;
 
+// an array for child process info along with a value that tracks the arrays length
 int currentInfo = 0;
 execInfo infoArray[1000];
 
+// an array with history of commands along with a value that tracks the arrays length
 int currentHistory = 0;
 char historyArray[1000][1000];
 
-void close_file(int file_name)
+// prints the process information in the infoArray
+void printProcessInfo()
 {
-    if (close(file_name) == -1)
-    {
-        printf("Error closing file\n");
-    }
-}
-
-void dumpProcesses()
-{
-    printf("\nCOMMANDS RAN: %d\n", currentInfo);
+    printf("\n\nCOMMANDS RAN: %d\n", currentInfo);
     for (int i = 0; i < currentInfo; i++)
     {
         printf("\n");
@@ -44,6 +40,7 @@ void dumpProcesses()
     }
 }
 
+// prints the history of commands executed
 void history()
 {
     for (int i = 0; i < currentHistory; i++)
@@ -52,8 +49,10 @@ void history()
     }
 }
 
+// creates child proccesses and runs them
 void create_process_and_run(char **args, int argscount)
 {
+    // creates a child process
     int status = fork();
     if (status < 0)
     {
@@ -62,11 +61,13 @@ void create_process_and_run(char **args, int argscount)
     }
     if (status == 0)
     {
+        // history command can be executed
         if (strcmp(args[0], "history") == 0)
         {
             history();
             exit(0);
         }
+        // any valid exec command can be executed
         else
         {
             int executionStatus = execvp(args[0], args);
@@ -79,120 +80,104 @@ void create_process_and_run(char **args, int argscount)
     }
     else
     {
+        // variables required for processInfo
         execInfo processInfo;
         clock_t start_time;
         clock_t end_time;
-        time_t time_result = time(&processInfo.timeExecuted);
-        if (time_result == -1)
-        {
-            printf("Error with reading time\n");
-            return;
-        }
+        time_t timeExecuted;
+
+        // waiting and information that is required to calculate some execInfo
+        time(&timeExecuted);
         start_time = clock();
         int ret;
         int pid = wait(&ret);
         end_time = clock();
         double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
-        processInfo.pid = pid;
-        processInfo.duration = duration;
-        processInfo.exitStatus = WEXITSTATUS(ret);
-        infoArray[currentInfo] = processInfo;
-        currentInfo++;
+
+        // checks if the command is safely executed
         if (!WIFEXITED(ret))
         {
             printf("Abnormal termination of %d\n", pid);
             return;
         }
+
+        // saves all the execInfo
+        processInfo.pid = pid;
+        processInfo.timeExecuted = timeExecuted;
+        processInfo.duration = duration;
+        processInfo.exitStatus = WEXITSTATUS(ret);
+
+        // adds the processInfo to infoArray and updates its size
+        infoArray[currentInfo] = processInfo;
+        currentInfo++;
     }
 }
 
 void launch(char *userInput)
 {
-    if (currentHistory < 1000)
+    // saving history
+    if (currentHistory >= 1000)
     {
-        strcpy(historyArray[currentHistory], userInput);
-        currentHistory++;
+        // if history size is depleted it starts from the first history entry
+        printf("Maximum history size reached! Resetting from 0.\n");
+        currentHistory = 0;
     }
-    else
-    {
-        printf("Maximum history size reached!!\n");
-    }
+    // copies the userInput to historyArray
+    strcpy(historyArray[currentHistory], userInput);
+    currentHistory++;
+
+    // creates arguments by using tokenizer so that it can be passed into the execvp function
     char *args[1000] = {NULL};
     char *token = strtok(userInput, " \n\t\r\a\"");
     int count = 0;
-
+    // loops through the input using the tokenizer until it is completely tokenized
     while (token != NULL && count < 999)
     {
-        if (strlen(token) > 0){
+        if (strlen(token) > 0)
+        {
             args[count] = token;
             count++;
         }
         token = strtok(NULL, " \n\t\r\a\"");
     }
 
+    // checks if args exists
     if (args[0] != NULL)
     {
+        // executes the user input
         create_process_and_run(args, count);
     }
     else
     {
+        // redudant print statment (just letting you know this wasn't an oversight)
         printf("\n");
     }
 }
 
-void exit_loop()
+// Ctrl+C input is redirected to this function
+void exit_program()
 {
-    dumpProcesses();
+    printProcessInfo();
     exit(0);
 }
 
 int main()
 {
+    // reads the ctrl+C input and redirects it to exit_program
+    signal(SIGINT, exit_program);
 
-    signal(SIGINT, exit_loop);
-
-    // Code for input of NCPU, TSLICE
-
-    // int NCPU;
-    // int TSLICE;
-
-    // printf("Enter number of CPUs:\n");
-    // scanf("%d", &NCPU);
-    // printf("Enter time slice:\n");
-    // scanf("%d", &NCPU);
-
-    // printf("NCPU = %d and TSLICE = %d",NCPU,TSLICE);
-
+    // intialized userInput to be read
     char userInput[1000];
-    char cwd[1024];
+
     do
     {
-        // for (int i =0; i<1000;  i++){
-        //     printf("Argument %d is %s ",i, userInput[i]);
-        // }
+        // reads the input with a nice terminal interface
+        printf("> ");
+        fgets(userInput, sizeof(userInput), stdin);
 
-        printf("%s> ", getcwd(cwd, sizeof(cwd)));
-        if (fgets(userInput, sizeof(userInput), stdin) == NULL)
-        {
-            break; // Handle EOF or fgets error
-        }
-
-        // printf("Before string :- %s\n", userInput);
-
-        // terminate input by replacing newline with null character
-        // int len = strlen(userInput);
-        // if (len > 0 && userInput[len - 1] == '\n')
-        // {
-        //     // printf("Here\n");
-        //     userInput[len - 1] = '\0';
-        // }
-
-        // printf("After string :- %s\n", userInput);
-        // for (int i = 0; i < strlen(userInput); i++){
-        //     printf("char %c\n", userInput[i]);
-        // }
+        // runs every command user has inputted
         launch(userInput);
-        printf("\n");
+        // previously i had added a new line but it doesn't make sense because bash never does it either
 
     } while (true);
     return 0;
