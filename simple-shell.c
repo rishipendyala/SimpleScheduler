@@ -67,6 +67,10 @@ void create_process_and_run(char **args, int argscount)
             history();
             exit(0);
         }
+        else if (strcmp(args[0], "submit"))
+        {
+            
+        }
         // any valid exec command can be executed
         else
         {
