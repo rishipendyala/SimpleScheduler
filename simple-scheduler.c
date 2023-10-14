@@ -6,6 +6,11 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <fcntl.h>
+#include <semaphore.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
 
 typedef struct execInfo
 {
@@ -24,6 +29,14 @@ typedef LinkedList
     execInfo *head;
 };
 LinkedList;
+
+typedef struct shmbuf
+{
+    sem_t sem1;
+    sem_t sem2;
+    size_t pid_cnt;
+    int pids[BUF_SIZE];
+} shmbuf;
 
 execInfo processTable[1000];
 
@@ -268,15 +281,56 @@ void calculateExecutionTime(int processes[], int n, int bt[], int wt[], int quan
     }
 }
 
+const char* path = "Queue";
+int shm_fd;
+
+void shm_init(char *shmpath)
+{   
+    struct shmbuf *shmPointer;
+
+    // Opening the shared memory object
+    int shm_fd = shm_open(shmpath, O_RDWR, 0);
+    if (shm_fd == -1) {
+        printf("Couldn't open the shared memory\n");
+        return;
+    }
+
+    // Map the shared memory address space
+    shmPointer = mmap(NULL, sizeof(*shmPointer), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (shmPointer == MAP_FAILED) {
+        printf("Mapping shared memory failed\n");
+        return;
+    }
+
+    // Some initialisation...
+
+    // Update the semaphore (sem_post)
+    if (sem_post(&shmPointer->sem1) == -1) {
+        printf("Couldn't update the semaphore\n");
+        return;
+    }
+
+    // Wait for the shell to access memory
+    if (sem_wait(&shmPointer->sem2) == -1) {
+        printf("Waiting for the shell failed\n");
+        return;
+    }
+
+    // INSERT CODE to perform operations
+
+    // All done
+    printf("Init seiko!\n");
+    exit(EXIT_SUCCESS);
+}
+
 
 int main()
-{
+{   
+    shm_init(path);
 
     LinkedList ready;
-    LinkedList running;
-
     initializeLinkedList(&ready);
-    initializeLinkedList(&running);
+
 
     return 0;
 }

@@ -6,6 +6,12 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <fcntl.h>
+#include <semaphore.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+
 
 #define BUF_SIZE 1024
 
@@ -21,7 +27,8 @@ typedef struct execInfo
 // 
 typedef struct shmbuf
 {
-    sem_t sem;
+    sem_t sem_data_available;
+    sem_t sem_data_processed;
     size_t pid_cnt;
     int pids[BUF_SIZE];
 } shmbuf;
@@ -38,9 +45,57 @@ char historyArray[1000][1000];
 int shm_fd;
 
 void shm_init(char *shmpath)
-{
-    
+{   
+    // Following lecture slides, we use shm_open, ftruncate, mmap
+    struct shmbuf *shmPointer;
+
+    // Create shared memory object
+    shm_fd = shm_open(shmpath, O_CREAT | O_EXCL | O_RDWR, 0600);
+    if (shm_fd == -1) {
+        printf("Failed to create shared memory object\n");
+        return;
+    }
+
+    // Allocate memory for the shared object
+    if (ftruncate(shm_fd, sizeof(struct shmbuf)) == -1) {
+        printf("ftruncate failed\n");
+        return;
+    }
+
+    // Map shared memory
+    shmPointer = mmap(NULL, sizeof(*shmPointer), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (shmPointer == MAP_FAILED) {
+        printf("Mapping memory failed\n");
+        return;
+    }
+
+    // Initialise semaphores
+    if (sem_init(&shmPointer->sem_data_available, 1, 0) == -1 || sem_init(&shmPointer->sem_data_processed, 1, 0) == -1) {
+        printf("Semaphore init failed\n");
+        return;
+    }
+
+    // Wait for a signal to proceed
+    if (sem_wait(&shmPointer->sem_data_available) == -1) {
+        printf("Semaphore wait failed\n");
+        return;
+    }
+
+    // INSERT CODE to add process to the ready queue
+
+    // Ready queue updated
+    // Update semaphore
+    if (sem_post(&shmPointer->sem_data_processed) == -1) {
+        printf("Semaphore post failed\n");
+        return;
+    }
+
+    // Unlink shared memory and exit
+    printf("Init seiko!\n");
+    shm_unlink(shmpath);
+    exit(EXIT_SUCCESS);
 }
+
 
 // prints the process information in the infoArray
 void printProcessInfo()
@@ -183,8 +238,11 @@ void exit_program()
     exit(0);
 }
 
+const char* path = "Queue";
+
 int main()
-{
+{   
+    shm_init(path);
     // reads the ctrl+C input and redirects it to exit_program
     signal(SIGINT, exit_program);
 
