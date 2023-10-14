@@ -44,127 +44,40 @@ void dumpProcesses()
     }
 }
 
-int countPipes(char **args, int argscount)
-{
-    int count = 0;
-
-    for (int i = 0; i < argscount; i++)
-    {
-        if (strcmp(args[i], "|") == 0)
-        {
-            count++;
-        }
-    }
-    return count;
-}
-
 void history()
 {
     for (int i = 0; i < currentHistory; i++)
     {
-        printf("%s\n", historyArray[i]);
+        printf("%s", historyArray[i]);
     }
 }
 
-int create_process_and_run(char **args, int n_pipes, int argscount)
+void create_process_and_run(char **args, int argscount)
 {
-    int fd[n_pipes][2];
-    for (int i = 0; i < n_pipes; i++)
+    int status = fork();
+    if (status < 0)
     {
-        if (pipe(fd[i]) < 0)
-        {
-            printf("Something bad happened\n");
-            exit(1);
-        }
+        printf("Something bad happened\n");
+        exit(1);
     }
-
-    int i = 0;
-
-    for (int pipes = 0; pipes < n_pipes + 1; pipes++)
+    if (status == 0)
     {
-        char *new_args[1000];
-        int j = 0;
-
-        while (i < argscount)
+        if (strcmp(args[0], "history") == 0)
         {
-            if (strcmp(args[i], "|") == 0)
-            {
-                new_args[j] = NULL;
-                break;
-            }
-            new_args[j] = args[i];
-            i++;
-            j++;
-        }
-        i++;
-        int status = fork();
-        if (status < 0)
-        {
-            printf("Something bad happened\n");
-            exit(1);
-        }
-        if (status == 0)
-        {
-            if (pipes != 0)
-            {
-                // Redirect input from the previous pipe
-                if (dup2(fd[pipes - 1][0], 0) < 0)
-                {
-                    printf("Duplication failed\n");
-                    exit(1);
-                }
-            }
-
-            if (pipes != n_pipes)
-            {
-                // Redirect output to the next pipe
-                if (dup2(fd[pipes][1], 1) < 0)
-                {
-                    printf("Duplication failed\n");
-                    exit(1);
-                }
-            }
-            for (int no_fd = 0; no_fd < n_pipes; no_fd++)
-            {
-                close_file(fd[no_fd][0]);
-                close_file(fd[no_fd][1]);
-            }
-            if (strcmp(args[0], "history") == 0)
-            {
-                history();
-                exit(0);
-            }
-            else
-            {
-                // for (int i = 0; i < 10; i++) {
-                //     printf("%s\n", args[i]);
-                // }
-                int executionStatus = execvp(new_args[0], new_args);
-                if (executionStatus == -1)
-                {
-                    printf("Invalid command\n");
-                    return 0;
-                }
-            }
+            history();
+            exit(0);
         }
         else
         {
-            // Parent process close_files file descriptors it doesn't need
-            if (pipes != 0)
+            int executionStatus = execvp(args[0], args);
+            if (executionStatus == -1)
             {
-                close_file(fd[pipes - 1][0]);
-                close_file(fd[pipes - 1][1]);
+                printf("Invalid command\n");
+                exit(1);
             }
         }
     }
-
-    for (int i = 0; i < n_pipes; i++)
-    {
-        close_file(fd[i][0]);
-        close_file(fd[i][1]);
-    }
-
-    for (int i = 0; i < n_pipes + 1; i++)
+    else
     {
         execInfo processInfo;
         clock_t start_time;
@@ -173,6 +86,7 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
         if (time_result == -1)
         {
             printf("Error with reading time\n");
+            return;
         }
         start_time = clock();
         int ret;
@@ -187,102 +101,43 @@ int create_process_and_run(char **args, int n_pipes, int argscount)
         if (!WIFEXITED(ret))
         {
             printf("Abnormal termination of %d\n", pid);
-            return 1;
+            return;
         }
     }
-    return 1;
 }
-
-// void launch(char *userInput)
-// {
-//     char *args[1000] = {NULL};
-//     char *token = strtok(userInput, " ");
-
-//     int count = 0;
-//     while (token != NULL && count < 999)
-//     {
-//         args[count] = token;
-//         token = strtok(NULL, " ");
-//         count++;
-//     }
-
-//     if (args[0] != NULL)
-//     {
-//         int pipeCount = countPipes(args, count);
-//         int isExecuted = create_process_and_run(args, pipeCount, count);
-//         if (isExecuted)
-//         {
-//             if (currentHistory < 1000)
-//             {
-//                 strcpy(historyArray[currentHistory], userInput);
-//                 currentHistory++;
-//             }
-//             else
-//             {
-//                 printf("Maximum history size reached!!\n");
-//             }
-//         }
-//         else
-//         {
-//             printf("Command execution failed!\n");
-//         }
-//     }
-//     else
-//     {
-//         printf("\n");
-//     }
-// }
 
 void launch(char *userInput)
 {
+    if (currentHistory < 1000)
+    {
+        strcpy(historyArray[currentHistory], userInput);
+        currentHistory++;
+    }
+    else
+    {
+        printf("Maximum history size reached!!\n");
+    }
     char *args[1000] = {NULL};
     char *token = strtok(userInput, " \n\t\r\a\"");
     int count = 0;
-    printf("Token print :- %s\n", token);
 
     while (token != NULL && count < 999)
     {
-        if (strlen(token) > 0)
-        { // Check if the token is not empty
+        if (strlen(token) > 0){
             args[count] = token;
             count++;
         }
         token = strtok(NULL, " \n\t\r\a\"");
-        printf("Token print :- %s\n", token);
     }
-    // if (token != NULL){
-    // free(token);
-
-    // };
-
 
     if (args[0] != NULL)
     {
-        int pipeCount = countPipes(args, count);
-        int isExecuted = create_process_and_run(args, pipeCount, count);
-
-        if (isExecuted)
-        {
-            if (currentHistory < 1000)
-            {
-                strcpy(historyArray[currentHistory], userInput);
-                currentHistory++;
-            }
-            else
-            {
-                printf("Maximum history size reached!!\n");
-            }
-        }
-        else
-        {
-            printf("Command execution failed!\n");
-        }
+        create_process_and_run(args, count);
     }
     else
     {
         printf("\n");
     }
-    // free(args);
 }
 
 void exit_loop()
