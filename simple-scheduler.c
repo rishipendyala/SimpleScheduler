@@ -32,8 +32,8 @@ LinkedList;
 
 typedef struct shmbuf
 {
-    sem_t sem1;
-    sem_t sem2;
+    sem_t sem_data_available;
+    sem_t sem_data_processed;
     size_t pid_cnt;
     int pids[BUF_SIZE];
 } shmbuf;
@@ -305,13 +305,13 @@ void shm_init(char *shmpath)
     // Some initialisation...
 
     // Update the semaphore (sem_post)
-    if (sem_post(&shmPointer->sem1) == -1) {
+    if (sem_post(&shmPointer->sem_data_available) == -1) {
         printf("Couldn't update the semaphore\n");
         return;
     }
 
     // Wait for the shell to access memory
-    if (sem_wait(&shmPointer->sem2) == -1) {
+    if (sem_wait(&shmPointer->sem_data_processed) == -1) {
         printf("Waiting for the shell failed\n");
         return;
     }
