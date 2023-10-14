@@ -7,6 +7,8 @@
 #include <signal.h>
 #include <time.h>
 
+#define BUF_SIZE 1024
+
 // structure that stores the information of the child process
 typedef struct execInfo
 {
@@ -16,6 +18,14 @@ typedef struct execInfo
     int exitStatus;
 } execInfo;
 
+// 
+typedef struct shmbuf
+{
+    sem_t sem;
+    size_t pid_cnt;
+    int pids[BUF_SIZE];
+} shmbuf;
+
 // an array for child process info along with a value that tracks the arrays length
 int currentInfo = 0;
 execInfo infoArray[1000];
@@ -23,6 +33,14 @@ execInfo infoArray[1000];
 // an array with history of commands along with a value that tracks the arrays length
 int currentHistory = 0;
 char historyArray[1000][1000];
+
+// 
+int shm_fd;
+
+void shm_init(char *shmpath)
+{
+    
+}
 
 // prints the process information in the infoArray
 void printProcessInfo()
