@@ -183,20 +183,25 @@ void create_process_and_run(char **args, int argscount)
         start_time = clock();
         int ret;
         int pid = 0;
+
+        printf("Hello People\n");
         if (!isScheduled)
         {
             pid = wait(&ret);
+            printf("Hello humans\n");
         }
         else
         {
             waitpid(status, &status, WNOHANG);
             pid = status;
+            printf("Hello animals\n");
         }
         end_time = clock();
         double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+        printf("Hello aliens\n");
 
         // checks if the command is safely executed
-        if (!WIFEXITED(ret))
+        if (!WIFEXITED(ret) && !isScheduled)
         {
             printf("Abnormal termination of %d\n", pid);
             return;

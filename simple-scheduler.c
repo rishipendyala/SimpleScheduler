@@ -23,7 +23,6 @@ typedef struct shmbuf
     int pids[BUF_SIZE];
 } shmbuf;
 
-
 /*
 
 void makeRunning(LinkedList *ready, LinkedList *running)
@@ -102,7 +101,7 @@ void scheduler()
 {
     while (true)
     {
-        lock(processTable);
+        shmPointer->lock(processTable);
         forEach(execInfo p
                 : scheduling_algorithm(processTable))
         {
@@ -114,13 +113,13 @@ void scheduler()
             unlock(processTable);
             swtch(scheduler_process, p);
             // p is done for now..
-            lock(processTable);
+            shmPointer->lock(processTable);
         }
         unlock(processTable);
     }
 }
 
-// Inspired from 
+// Inspired from
 // https://www.geeksforgeeks.org/program-for-round-robin-scheduling-for-the-same-arrival-time/
 
 void calculateWaitingTime(int processes[], int n, int bt[], int wt[], int quantum) {
@@ -146,7 +145,7 @@ void calculateWaitingTime(int processes[], int n, int bt[], int wt[], int quantu
                     int executionTime = currentTime;
                     wt[i] = executionTime - bt[i];
                     remainingTime[i] = 0;
-                   
+
                 }
             }
         }
@@ -180,7 +179,7 @@ void calculateExecutionTime(int processes[], int n, int bt[], int wt[], int quan
                     int executionTime = currentTime;
                     wt[i] = executionTime - bt[i];
                     remainingTime[i] = 0;
-                    
+
                 }
             }
         }
@@ -196,38 +195,42 @@ int shm_fd;
 struct shmbuf *shmPointer;
 
 void shm_init(char *shmpath)
-{   
+{
 
     // Opening the shared memory object
     int shm_fd = shm_open(shmpath, O_RDWR, 0);
-    if (shm_fd == -1) {
+    if (shm_fd == -1)
+    {
         printf("Couldn't open the shared memory\n");
         return;
     }
 
     // Map the shared memory address space
     shmPointer = mmap(NULL, sizeof(*shmPointer), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (shmPointer == MAP_FAILED) {
+    if (shmPointer == MAP_FAILED)
+    {
         printf("Mapping shared memory failed\n");
-        return;
+        exit(1);
     }
 
     // Some initialisation...
 
     // Update the semaphore (sem_post)
-    if (sem_post(&shmPointer->sem_data_available) == -1) {
+    if (sem_post(&shmPointer->sem_data_available) == -1)
+    {
         printf("Couldn't update the semaphore\n");
-        return;
+        exit(1);
     }
 
     // Wait for the shell to access memory
-    if (sem_wait(&shmPointer->sem_data_processed) == -1) {
+    if (sem_wait(&shmPointer->sem_data_processed) == -1)
+    {
         printf("Waiting for the shell failed\n");
-        return;
+        exit(1);
     }
 }
 
-int pid_dequeue() 
+int pid_dequeue()
 {
     int dequeued = shmPointer->pids[0];
     for (int i = 1; i < shmPointer->pid_cnt; i++)
@@ -244,36 +247,40 @@ int pid_enqueue(int pid)
 }
 
 int main()
-{   
-    char* path = "Queue";
+{
+    char *path = "Queue";
     shm_init(path);
 
-    while (true) 
+    while (true)
     {
         int numRunning;
-        if(shmPointer->ncpu < shmPointer->pid_cnt)
+        if (shmPointer->ncpu < shmPointer->pid_cnt)
         {
             numRunning = shmPointer->ncpu;
-        } else 
+        }
+        else
         {
             numRunning = shmPointer->pid_cnt;
         }
         int pid_running[numRunning];
 
+        // Locking the critical section
+        sem_wait(&shmPointer->sem_data_available);
 
-        // figure out lock(pids)
         for (int i = 0; i < numRunning; i++)
         {
             pid_running[i] = pid_dequeue();
             kill(pid_running[i], SIGCONT);
         }
 
+        // Unlocking Critical section
+        sem_post(&shmPointer->sem_data_processed);
 
-        // figure out unlock(pids)
-        usleep(shmPointer->tslice);
+        usleep(shmPointer->tslice); // sleeping for tslice
 
+        // Locking critical section
+        sem_wait(&shmPointer->sem_data_processed);
 
-        // figure out lock(pids)
         for (int i = 0; i < numRunning; i++)
         {
             if (kill(pid_running[i], SIGSTOP) == 0)
@@ -285,11 +292,12 @@ int main()
                 printf("Process completed with pid %d", pid_running[i]);
             }
         }
-        // figure out unlock(pids)
-    }
 
-    //LinkedList ready;
-    //initializeLinkedList(&ready);
+        // Unlocking critical section
+        sem_post(&shmPointer->sem_data_available);
+    }
+    // LinkedList ready;
+    // initializeLinkedList(&ready);
 
     shm_unlink(path);
     munmap(shmPointer, sizeof(*shmPointer));
