@@ -227,6 +227,21 @@ void shm_init(char *shmpath)
     }
 }
 
+int pid_dequeue() 
+{
+    int dequeued = shmPointer->pids[0];
+    for (int i = 1; i < shmPointer->pid_cnt; i++)
+    {
+        shmPointer->pids[i - 1] = shmPointer->pids[i];
+    }
+    return dequeued;
+}
+
+int pid_enqueue(int pid)
+{
+    shmPointer->pids[shmPointer->pid_cnt] = pid;
+    shmPointer->pid_cnt++;
+}
 
 int main()
 {   
@@ -235,10 +250,42 @@ int main()
 
     while (true) 
     {
-        sem_wait(&shmPointer->sem_data_available);
-        int new_pid = shmPointer->pids[shmPointer->pid_cnt-1];
-        printf("%d\n", new_pid);
-        kill(new_pid, SIGCONT);
+        int numRunning;
+        if(shmPointer->ncpu < shmPointer->pid_cnt)
+        {
+            numRunning = shmPointer->ncpu;
+        } else 
+        {
+            numRunning = shmPointer->pid_cnt;
+        }
+        int pid_running[numRunning];
+
+
+        // figure out lock(pids)
+        for (int i = 0; i < numRunning; i++)
+        {
+            pid_running[i] = pid_dequeue();
+            kill(pid_running[i], SIGCONT);
+        }
+
+
+        // figure out unlock(pids)
+        usleep(shmPointer->tslice);
+
+
+        // figure out lock(pids)
+        for (int i = 0; i < numRunning; i++)
+        {
+            if (kill(pid_running[i], SIGSTOP) == 0)
+            {
+                pid_enqueue(pid_running[i]);
+            }
+            else
+            {
+                printf("Process completed with pid %d", pid_running[i]);
+            }
+        }
+        // figure out unlock(pids)
     }
 
     //LinkedList ready;

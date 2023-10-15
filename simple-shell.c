@@ -11,8 +11,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-
-
 #define BUF_SIZE 1024
 
 // structure that stores the information of the child process
@@ -24,7 +22,7 @@ typedef struct execInfo
     int exitStatus;
 } execInfo;
 
-// 
+//
 typedef struct shmbuf
 {
     sem_t sem_data_available;
@@ -43,56 +41,64 @@ execInfo infoArray[1000];
 int currentHistory = 0;
 char historyArray[1000][1000];
 
-// 
+//
 int shm_fd;
 struct shmbuf *shmPointer;
 
-void shm_init(char *shmpath)
-{   
+void shm_init(char *shmpath, int ncpu, int tslice)
+{
     // Following lecture slides, we use shm_open, ftruncate, mmap
     // Create shared memory object
     shm_fd = shm_open(shmpath, O_CREAT | O_EXCL | O_RDWR, 0600);
-    if (shm_fd == -1) {
+    if (shm_fd == -1)
+    {
         printf("Failed to create shared memory object\n");
         return;
     }
 
     // Allocate memory for the shared object
-    if (ftruncate(shm_fd, sizeof(struct shmbuf)) == -1) {
+    if (ftruncate(shm_fd, sizeof(struct shmbuf)) == -1)
+    {
         printf("ftruncate failed\n");
         return;
     }
 
     // Map shared memory
     shmPointer = mmap(NULL, sizeof(*shmPointer), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (shmPointer == MAP_FAILED) {
+    if (shmPointer == MAP_FAILED)
+    {
         printf("Mapping memory failed\n");
         return;
     }
 
     // Initialise semaphores
-    if (sem_init(&shmPointer->sem_data_available, 1, 0) == -1 || sem_init(&shmPointer->sem_data_processed, 1, 0) == -1) {
+    if (sem_init(&shmPointer->sem_data_available, 1, 0) == -1 || sem_init(&shmPointer->sem_data_processed, 1, 0) == -1)
+    {
         printf("Semaphore init failed\n");
         return;
     }
 
+    shmPointer->ncpu = ncpu;
+    shmPointer->tslice = tslice;
+
     // Wait for a signal to proceed
-    if (sem_wait(&shmPointer->sem_data_available) == -1) {
+    if (sem_wait(&shmPointer->sem_data_available) == -1)
+    {
         printf("Semaphore wait failed\n");
         return;
     }
 
     // INSERT CODE to add process to the ready queue
+    
 
     // Ready queue updated
     // Update semaphore
-    if (sem_post(&shmPointer->sem_data_processed) == -1) {
+    if (sem_post(&shmPointer->sem_data_processed) == -1)
+    {
         printf("Semaphore post failed\n");
         return;
     }
-    
 }
-
 
 // prints the process information in the infoArray
 void printProcessInfo()
@@ -123,7 +129,8 @@ void history()
 void create_process_and_run(char **args, int argscount)
 {
     int isScheduled = 0;
-    if (strcmp(args[0], "submit") == 0) {
+    if (strcmp(args[0], "submit") == 0)
+    {
         isScheduled = 1;
     }
     // creates a child process
@@ -137,13 +144,13 @@ void create_process_and_run(char **args, int argscount)
     {
         if (isScheduled)
         {
-            for (int i = 0; i < 1000; i++) {
-                args[i-1] = args[i];
+            for (int i = 1; i < 1000; i++)
+            {
+                args[i - 1] = args[i];
             }
             int pid = getpid();
             shmPointer->pids[shmPointer->pid_cnt] = pid;
             shmPointer->pid_cnt++;
-            sem_post(&shmPointer->sem_data_available);
             kill(pid, SIGSTOP);
         }
         // history command can be executed
@@ -176,12 +183,14 @@ void create_process_and_run(char **args, int argscount)
         start_time = clock();
         int ret;
         int pid = 0;
-        if (!isScheduled) 
+        if (!isScheduled)
         {
             pid = wait(&ret);
-        } else
+        }
+        else
         {
             waitpid(status, &status, WNOHANG);
+            pid = status;
         }
         end_time = clock();
         double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
@@ -256,11 +265,17 @@ void exit_program()
 }
 
 int main()
-{   
-    int ncpu = 2;
-    int tslice = 10;
-    char* path = "Queue";
-    shm_init(path);
+{
+    int ncpu;
+    int tslice;
+    printf("Enter number of CPUs: ");
+    scanf("%d", &ncpu);
+    printf("Enter tslice in milliseconds: ");
+    scanf("%d", &tslice);
+    tslice*=1000;
+
+    char *path = "Queue";
+    shm_init(path, ncpu, tslice);
     // reads the ctrl+C input and redirects it to exit_program
     signal(SIGINT, exit_program);
 
