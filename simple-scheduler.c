@@ -11,110 +11,20 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-
-typedef struct execInfo
-{
-    int pid;
-    time_t timeExecuted;
-    float duration;
-    int exitStatus;
-    time_t waitTime;
-    char *state;
-    execInfo *next;
-
-} execInfo;
-
-typedef LinkedList
-{
-    execInfo *head;
-};
-LinkedList;
+#define BUF_SIZE 1024
 
 typedef struct shmbuf
 {
     sem_t sem_data_available;
     sem_t sem_data_processed;
-    size_t pid_cnt;
+    int ncpu;
+    int tslice;
+    int pid_cnt;
     int pids[BUF_SIZE];
 } shmbuf;
 
-execInfo processTable[1000];
 
-execInfo *createNode(int pid, time_t timeExecuted, float duration, int exitStatus)
-{
-    execInfo *newNode = (execInfo *)malloc(sizeof(execInfo));
-    if (newNode != NULL)
-    {
-        newNode->pid = pid;
-        newNode->next = NULL;
-        strcpy(newNode->state, "READY");
-        newNode->timeExecuted = timeExecuted;
-        newNode->duration = duration;
-        newNode->exitStatus = exitStatus;
-    }
-    return newNode;
-}
-
-void initializeLinkedList(LinkedList *list)
-{
-    list->head = NULL;
-}
-
-void insert(LinkedList *list, int pid, time_t timeExecuted, float duration, int exitStatus)
-{
-    execInfo *newNode = createNode(pid, timeExecuted, duration, exitStatus);
-    if (newNode != NULL)
-    {
-        if (list->head == NULL)
-        {
-            list->head = newNode;
-        }
-        else
-        {
-            execInfo *current = list->head;
-            while (current->next != NULL)
-            {
-                current = current->next;
-            }
-            current->next = newNode;
-        }
-    }
-}
-
-void append(LinkedList *list, execInfo *p)
-{
-    execInfo *t = list->head;
-    if (t != NULL)
-    {
-        while (t->next ! = NULL)
-        {
-            t = t->next;
-        }
-        t->next = p;
-    }
-    else
-    {
-        t = p;
-    }
-}
-
-void displayLinkedList(LinkedList *list)
-{
-    execInfo *current = list->head;
-    while (current != NULL)
-    {
-        printProcess(current);
-        current = current->next;
-    }
-}
-
-void printProcess(execInfo *process)
-{
-    printf("PID: %d\n", process->pid);
-    printf("DURATION: %f\n", process->duration);
-    printf("EXIT STATUS: %d\n", process->exitStatus);
-    printf("\n");
-}
+/*
 
 void makeRunning(LinkedList *ready, LinkedList *running)
 {
@@ -280,13 +190,13 @@ void calculateExecutionTime(int processes[], int n, int bt[], int wt[], int quan
         }
     }
 }
+*/
 
-const char* path = "Queue";
 int shm_fd;
+struct shmbuf *shmPointer;
 
 void shm_init(char *shmpath)
 {   
-    struct shmbuf *shmPointer;
 
     // Opening the shared memory object
     int shm_fd = shm_open(shmpath, O_RDWR, 0);
@@ -315,22 +225,26 @@ void shm_init(char *shmpath)
         printf("Waiting for the shell failed\n");
         return;
     }
-
-    // INSERT CODE to perform operations
-
-    // All done
-    printf("Init seiko!\n");
-    exit(EXIT_SUCCESS);
 }
 
 
 int main()
 {   
+    char* path = "Queue";
     shm_init(path);
 
-    LinkedList ready;
-    initializeLinkedList(&ready);
+    while (true) 
+    {
+        sem_wait(&shmPointer->sem_data_available);
+        int new_pid = shmPointer->pids[shmPointer->pid_cnt-1];
+        printf("%d\n", new_pid);
+        kill(new_pid, SIGCONT);
+    }
 
+    //LinkedList ready;
+    //initializeLinkedList(&ready);
 
+    shm_unlink(path);
+    munmap(shmPointer, sizeof(*shmPointer));
     return 0;
 }

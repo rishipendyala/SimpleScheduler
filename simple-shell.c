@@ -29,7 +29,9 @@ typedef struct shmbuf
 {
     sem_t sem_data_available;
     sem_t sem_data_processed;
-    size_t pid_cnt;
+    int ncpu;
+    int tslice;
+    int pid_cnt;
     int pids[BUF_SIZE];
 } shmbuf;
 
@@ -43,12 +45,11 @@ char historyArray[1000][1000];
 
 // 
 int shm_fd;
+struct shmbuf *shmPointer;
 
 void shm_init(char *shmpath)
 {   
     // Following lecture slides, we use shm_open, ftruncate, mmap
-    struct shmbuf *shmPointer;
-
     // Create shared memory object
     shm_fd = shm_open(shmpath, O_CREAT | O_EXCL | O_RDWR, 0600);
     if (shm_fd == -1) {
@@ -89,11 +90,7 @@ void shm_init(char *shmpath)
         printf("Semaphore post failed\n");
         return;
     }
-
-    // Unlink shared memory and exit
-    printf("Init seiko!\n");
-    shm_unlink(shmpath);
-    exit(EXIT_SUCCESS);
+    
 }
 
 
@@ -125,6 +122,10 @@ void history()
 // creates child proccesses and runs them
 void create_process_and_run(char **args, int argscount)
 {
+    int isScheduled = 0;
+    if (strcmp(args[0], "submit") == 0) {
+        isScheduled = 1;
+    }
     // creates a child process
     int status = fork();
     if (status < 0)
@@ -134,15 +135,22 @@ void create_process_and_run(char **args, int argscount)
     }
     if (status == 0)
     {
+        if (isScheduled)
+        {
+            for (int i = 0; i < 1000; i++) {
+                args[i-1] = args[i];
+            }
+            int pid = getpid();
+            shmPointer->pids[shmPointer->pid_cnt] = pid;
+            shmPointer->pid_cnt++;
+            sem_post(&shmPointer->sem_data_available);
+            kill(pid, SIGSTOP);
+        }
         // history command can be executed
         if (strcmp(args[0], "history") == 0)
         {
             history();
             exit(0);
-        }
-        else if (strcmp(args[0], "submit"))
-        {
-            
         }
         // any valid exec command can be executed
         else
@@ -167,7 +175,14 @@ void create_process_and_run(char **args, int argscount)
         time(&timeExecuted);
         start_time = clock();
         int ret;
-        int pid = wait(&ret);
+        int pid = 0;
+        if (!isScheduled) 
+        {
+            pid = wait(&ret);
+        } else
+        {
+            waitpid(status, &status, WNOHANG);
+        }
         end_time = clock();
         double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
 
@@ -235,13 +250,16 @@ void launch(char *userInput)
 void exit_program()
 {
     printProcessInfo();
+    shm_unlink("Queue");
+    munmap(shmPointer, sizeof(*shmPointer));
     exit(0);
 }
 
-const char* path = "Queue";
-
 int main()
 {   
+    int ncpu = 2;
+    int tslice = 10;
+    char* path = "Queue";
     shm_init(path);
     // reads the ctrl+C input and redirects it to exit_program
     signal(SIGINT, exit_program);
@@ -260,5 +278,6 @@ int main()
         // previously i had added a new line but it doesn't make sense because bash never does it either
 
     } while (true);
+
     return 0;
 }
