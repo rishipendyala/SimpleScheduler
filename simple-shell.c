@@ -20,6 +20,7 @@ typedef struct schedInfo
     char name[1000];
     int execTime;
     int waitTime;
+    int priority;
 } schedInfo;
 
 // structure that stores the information of the child process
@@ -36,12 +37,15 @@ typedef struct shmbuf
 {
     int isRunning;
     sem_t sem_lock;
+    sem_t sem_check;
     int ncpu;
     int tslice;
     int pid_cnt;
     schedInfo pids[BUF_SIZE];
     int completed_cnt;
     schedInfo completed[BUF_SIZE];
+    int pids_completed_cnt;
+    int pids_completed[BUF_SIZE];
 } shmbuf;
 
 // an array for child process info along with a value that tracks the arrays length
@@ -60,6 +64,7 @@ void shm_init(char *shmpath, int ncpu, int tslice)
 {
     // Following lecture slides, we use shm_open, ftruncate, mmap
     // Create shared memory object
+    shm_unlink(shmpath);
     shm_fd = shm_open(shmpath, O_CREAT | O_EXCL | O_RDWR, 0600);
     if (shm_fd == -1)
     {
@@ -83,7 +88,7 @@ void shm_init(char *shmpath, int ncpu, int tslice)
     }
 
     // Initialise semaphores
-    if (sem_init(&shmPointer->sem_lock, 1, 1) == -1)
+    if (sem_init(&shmPointer->sem_lock, 1, 1) == -1 || sem_init(&shmPointer->sem_check, 1, 0) == -1)
     {
         printf("Semaphore init failed\n");
         return;
@@ -93,6 +98,10 @@ void shm_init(char *shmpath, int ncpu, int tslice)
     shmPointer->ncpu = ncpu;
     shmPointer->tslice = tslice;
     shmPointer->isRunning=1;
+
+    printf("Waiting for scheduler\n");
+    sem_wait(&shmPointer->sem_check);
+    printf("Scheduler hooked\n");
 }
 
 // prints the process information in the infoArray
@@ -155,18 +164,57 @@ void create_process_and_run(char **args, int argscount)
     {
         if (isScheduled)
         {
-            // shm is locked
-            sem_wait(&shmPointer->sem_lock);
-            // pid of the current process is appended to the process table
-            shmPointer->pids[shmPointer->pid_cnt].pid = getpid();
-            shmPointer->pid_cnt++;
-            // shm is unlocked
-            sem_post(&shmPointer->sem_lock);
-            // stops the process
-            kill(getpid(), SIGSTOP);
+            int status2 = fork();
+            if (status2 < 0)
+            {
+                printf("Something bad happened\n");
+            }
+            else if (status2 == 0)
+            {
+                // shm is locked
+                sem_wait(&shmPointer->sem_lock);
+                schedInfo *process = (schedInfo*) malloc(sizeof(schedInfo*));
+                // pid of the current process is appended to the process table
+                process->pid = getpid();
+                process->execTime = 0;
+                process->waitTime = 0;
+                if (args[1] != NULL)
+                {
+                    process->priority = atoi(args[1]);
+                } else {
+                    process->priority = 1;
+                }
+                shmPointer->pids[shmPointer->pid_cnt] = *process;
+                shmPointer->pid_cnt++;
+                
+                // shm is unlocked
+                sem_post(&shmPointer->sem_lock);
+                // stops the process
+                kill(getpid(), SIGSTOP);
+                int executionStatus = execvp(args[0], args);
+                if (executionStatus == -1)
+                {
+                    printf("Invalid command\n");
+                    exit(1);
+                }
+            }
+            else
+            {
+                int ret;
+                int pid = wait(&ret);
+                if (!WIFEXITED(ret))
+                {
+                    printf("Abnormal termination of %d", pid);
+                }
+                sem_wait(&shmPointer->sem_lock);
+                shmPointer->pids_completed[shmPointer->pids_completed_cnt] = pid;
+                shmPointer->pids_completed_cnt++;
+                sem_post(&shmPointer->sem_lock);
+            }
+            
         }
         // history command can be executed
-        if (strcmp(args[0], "history") == 0)
+        else if (strcmp(args[0], "history") == 0)
         {
             history();
             exit(0);

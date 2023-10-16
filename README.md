@@ -7,6 +7,8 @@ We have implemented a simple scheduler in C from scratch. Once the shell is crea
 - semaphore
 - signals
 - kill
+- grandchild proccesses
+- Queue
 
 ## Our Approach
 1. At the start of both the shell and the scheduler an IPC is created using shm to link the two

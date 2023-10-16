@@ -19,18 +19,22 @@ typedef struct schedInfo
     char name[1000];
     int execTime;
     int waitTime;
+    int priority;
 } schedInfo;
 
 typedef struct shmbuf
 {
     int isRunning;
     sem_t sem_lock;
+    sem_t sem_check;
     int ncpu;
     int tslice;
     int pid_cnt;
     schedInfo pids[BUF_SIZE];
     int completed_cnt;
     schedInfo completed[BUF_SIZE];
+    int pids_completed_cnt;
+    int pids_completed[BUF_SIZE];
 } shmbuf;
 
 int shm_fd;
@@ -41,6 +45,7 @@ void shm_init(char *shmpath)
 
     // Opening the shared memory object
     int shm_fd = shm_open(shmpath, O_RDWR, 0);
+    
     if (shm_fd == -1)
     {
         printf("Couldn't open the shared memory\n");
@@ -54,6 +59,10 @@ void shm_init(char *shmpath)
         printf("Mapping shared memory failed\n");
         exit(1);
     }
+
+    sem_post(&shmPointer->sem_check);
+    printf("hooked to shell\n");
+    
 }
 
 // dequeues stuff from the proccess table
@@ -64,6 +73,7 @@ schedInfo pid_dequeue()
     {
         shmPointer->pids[i - 1] = shmPointer->pids[i];
     }
+    shmPointer->pid_cnt--;
     return dequeued;
 }
 
@@ -81,6 +91,22 @@ void completed_enqueue(schedInfo pid)
     shmPointer->pid_cnt++;
 }
 
+void priority_sort()
+{
+    for (int i = 0; i < shmPointer->pid_cnt; i++)
+    {
+        for (int j = i + 1; j < shmPointer->pid_cnt; j++)
+        {
+            if (shmPointer->pids[i].priority<shmPointer->pids[j].priority)
+            {
+                schedInfo temp = shmPointer->pids[j];
+                shmPointer->pids[j] = shmPointer->pids[i];
+                shmPointer->pids[i] = shmPointer->pids[j];
+            }
+        }
+    }
+}
+
 int main()
 {
     char *path = "Queue";
@@ -89,11 +115,10 @@ int main()
     // infinitely schedules until the shell is exited
     while (shmPointer->isRunning)
     {
-        // checks the current time for if the program exits before tslice
-        clock_t start_time;
-        clock_t end_time;
-        start_time = clock();
-
+        if (shmPointer->pid_cnt == 0)
+        {
+            continue;
+        }
         // checks how many proccess are running
         int numRunning;
         if (shmPointer->ncpu < shmPointer->pid_cnt)
@@ -111,6 +136,8 @@ int main()
         // locks the table
         sem_wait(&shmPointer->sem_lock);
 
+        // my heuristic for priority queueing is just sorting
+        priority_sort();
         for (int i = 0; i < numRunning; i++)
         {
             // dequeues the process and enqueues to pid_running
@@ -131,35 +158,30 @@ int main()
         // adds the wait time to all the waiting processes
         for (int i = 0; i < shmPointer->pid_cnt; i++)
         {
-            pid_running[i].waitTime += shmPointer->tslice;
+            shmPointer->pids[i].waitTime += shmPointer->tslice;
         }
 
         for (int i = 0; i < numRunning; i++)
         {
-            int status;
-            int pid;
+            if (pid_running[i].pid == 0)
+            {
+                continue;
+            }
 
             // stops the process
-            kill(pid_running[i].pid, SIGSTOP);
-            // safely removes process that are completed
-            pid = waitpid(pid_running[i].pid, &status, WNOHANG);
-
-            // checks if process is exited
-            if (WIFEXITED(status))
+            if (kill(pid_running[i].pid, 0) == -1)
             {
-                // time is calculated
-                end_time = clock();
-                double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
-                duration *= 1000;
-                pid_running[i].execTime += (int) duration;
+               // time is calculated
+                pid_running[i].execTime += shmPointer->tslice;
                 // enqueued to completed processes
                 completed_enqueue(pid_running[i]);
             }
-            else if (WIFSTOPPED(status)) // checks if process is stopped
+            else
             {
                 // execution time is incrmented
                 pid_running[i].execTime += shmPointer->tslice;
                 // enqueued to running processes
+                kill(pid_running[i].pid, SIGSTOP);
                 pid_enqueue(pid_running[i]);
             }
         }
