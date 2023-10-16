@@ -13,6 +13,15 @@
 
 #define BUF_SIZE 1024
 
+// structure where scheduler proccess information is stored
+typedef struct schedInfo
+{
+    int pid;
+    char name[1000];
+    int execTime;
+    int waitTime;
+} schedInfo;
+
 // structure that stores the information of the child process
 typedef struct execInfo
 {
@@ -22,7 +31,7 @@ typedef struct execInfo
     int exitStatus;
 } execInfo;
 
-//
+// shm buffer
 typedef struct shmbuf
 {
     int isRunning;
@@ -30,7 +39,9 @@ typedef struct shmbuf
     int ncpu;
     int tslice;
     int pid_cnt;
-    int pids[BUF_SIZE];
+    schedInfo pids[BUF_SIZE];
+    int completed_cnt;
+    schedInfo completed[BUF_SIZE];
 } shmbuf;
 
 // an array for child process info along with a value that tracks the arrays length
@@ -78,6 +89,7 @@ void shm_init(char *shmpath, int ncpu, int tslice)
         return;
     }
 
+    // some info
     shmPointer->ncpu = ncpu;
     shmPointer->tslice = tslice;
     shmPointer->isRunning=1;
@@ -97,6 +109,16 @@ void printProcessInfo()
         printf("EXIT STATUS: %d\n", infoArray[i].exitStatus);
         printf("\n");
     }
+
+    printf("\n\nSCHEDULED COMMANDS RAN: %d\n", shmPointer->completed_cnt);
+    for (int i = 0; i < shmPointer->completed_cnt; i++)
+    {
+        printf("\n");
+        printf("Name: %s\n", shmPointer->completed[i].name);
+        printf("PID: %d\n", shmPointer->completed[i].pid);
+        printf("Execution Time: %d\n", shmPointer->completed[i].execTime);
+        printf("Wait Time: %d\n", shmPointer->completed[i].waitTime);
+    }
 }
 
 // prints the history of commands executed
@@ -112,9 +134,11 @@ void history()
 void create_process_and_run(char **args, int argscount)
 {
     int isScheduled = 0;
+    // if process isScheduled
     if (strcmp(args[0], "submit") == 0)
     {
         isScheduled = 1;
+        // remove "submit" from the args as it is not the executable itself
         for (int i = 1; i < 1000; i++)
         {
             args[i - 1] = args[i];
@@ -131,10 +155,14 @@ void create_process_and_run(char **args, int argscount)
     {
         if (isScheduled)
         {
+            // shm is locked
             sem_wait(&shmPointer->sem_lock);
-            shmPointer->pids[shmPointer->pid_cnt] = getpid();
+            // pid of the current process is appended to the process table
+            shmPointer->pids[shmPointer->pid_cnt].pid = getpid();
             shmPointer->pid_cnt++;
+            // shm is unlocked
             sem_post(&shmPointer->sem_lock);
+            // stops the process
             kill(getpid(), SIGSTOP);
         }
         // history command can be executed
