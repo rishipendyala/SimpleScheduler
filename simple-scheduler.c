@@ -15,8 +15,8 @@
 
 typedef struct shmbuf
 {
-    sem_t sem_data_available;
-    sem_t sem_data_processed;
+    int isRunning;
+    sem_t sem_lock;
     int ncpu;
     int tslice;
     int pid_cnt;
@@ -24,45 +24,6 @@ typedef struct shmbuf
 } shmbuf;
 
 /*
-
-void makeRunning(LinkedList *ready, LinkedList *running)
-{
-    execInfo p = removeNode(ready);
-    strcpy(p->state, "RUNNING");
-    append(running, p);
-}
-
-void makeReady(LinkedList *ready, LinkedList *running, execInfo *p)
-{
-    execInfo p = removeNode(running);
-    strcpy(p->state, "READY");
-    append(ready, p);
-}
-
-execInfo removeNode(LinkedList *list)
-{
-    execInfo *current = list->head;
-    execInfo *prev = NULL;
-
-    while (current->next != NULL)
-    {
-        prev = current;
-        current = current->next;
-    }
-
-    if (prev != NULL)
-    {
-        prev->next = NULL;
-    }
-    else
-    {
-        list->head = NULL;
-    }
-
-    return current;
-    // free(current); // Free the removed node
-}
-
 // SIGNALS FOR STARTING, PAUSING, TERMINATING, etc.
 void pauseProcess(int pid)
 {
@@ -89,106 +50,6 @@ void resumeProcess(int pid)
         printf("Error resuming process\n");
     }
 }
-
-void schedulingAlrgorithm(time_t TSLICE)
-{
-    // ROUND ROBIN
-}
-
-// the function below is pseudocode, not C code.
-// taken from lecture slides
-void scheduler()
-{
-    while (true)
-    {
-        shmPointer->lock(processTable);
-        forEach(execInfo p
-                : scheduling_algorithm(processTable))
-        {
-            if (p->state != READY)
-            {
-                continue;
-            }
-            p->state = RUNNING;
-            unlock(processTable);
-            swtch(scheduler_process, p);
-            // p is done for now..
-            shmPointer->lock(processTable);
-        }
-        unlock(processTable);
-    }
-}
-
-// Inspired from
-// https://www.geeksforgeeks.org/program-for-round-robin-scheduling-for-the-same-arrival-time/
-
-void calculateWaitingTime(int processes[], int n, int bt[], int wt[], int quantum) {
-    int remainingTime[n];
-    for (int i = 0; i < n; i++) {
-        remainingTime[i] = bt[i];
-    }
-
-    int currentTime = 0;
-
-    while (true) {
-        bool allDone = true;
-
-        for (int i = 0; i < n; i++) {
-            if (remainingTime[i] > 0) {
-                allDone = false;
-
-                if (remainingTime[i] > quantum) {
-                    currentTime += quantum;
-                    remainingTime[i] -= quantum;
-                } else {
-                    currentTime += remainingTime[i];
-                    int executionTime = currentTime;
-                    wt[i] = executionTime - bt[i];
-                    remainingTime[i] = 0;
-
-                }
-            }
-        }
-
-        if (allDone) {
-            break;
-        }
-    }
-}
-
-void calculateExecutionTime(int processes[], int n, int bt[], int wt[], int quantum) {
-    int remainingTime[n];
-    for (int i = 0; i < n; i++) {
-        remainingTime[i] = bt[i];
-    }
-
-    int currentTime = 0;
-
-    while (true) {
-        bool allDone = true;
-
-        for (int i = 0; i < n; i++) {
-            if (remainingTime[i] > 0) {
-                allDone = false;
-
-                if (remainingTime[i] > quantum) {
-                    currentTime += quantum;
-                    remainingTime[i] -= quantum;
-                } else {
-                    currentTime += remainingTime[i];
-                    int executionTime = currentTime;
-                    wt[i] = executionTime - bt[i];
-                    remainingTime[i] = 0;
-
-                }
-            }
-        }
-
-        if (allDone) {
-            break;
-        }
-    }
-}
 */
 
 int shm_fd;
@@ -210,22 +71,6 @@ void shm_init(char *shmpath)
     if (shmPointer == MAP_FAILED)
     {
         printf("Mapping shared memory failed\n");
-        exit(1);
-    }
-
-    // Some initialisation...
-
-    // Update the semaphore (sem_post)
-    if (sem_post(&shmPointer->sem_data_available) == -1)
-    {
-        printf("Couldn't update the semaphore\n");
-        exit(1);
-    }
-
-    // Wait for the shell to access memory
-    if (sem_wait(&shmPointer->sem_data_processed) == -1)
-    {
-        printf("Waiting for the shell failed\n");
         exit(1);
     }
 }
@@ -251,7 +96,9 @@ int main()
     char *path = "Queue";
     shm_init(path);
 
-    while (true)
+    printf("%d", shmPointer->isRunning);
+    
+    while (shmPointer->isRunning)
     {
         int numRunning;
         if (shmPointer->ncpu < shmPointer->pid_cnt)
@@ -263,9 +110,12 @@ int main()
             numRunning = shmPointer->pid_cnt;
         }
         int pid_running[numRunning];
-
-        // Locking the critical section
-        sem_wait(&shmPointer->sem_data_available);
+        for (int i = 0; i < numRunning; i++)
+        {
+            pid_running[i] = 0;
+        }
+        
+        sem_wait(&shmPointer->sem_lock);
 
         for (int i = 0; i < numRunning; i++)
         {
@@ -273,31 +123,33 @@ int main()
             kill(pid_running[i], SIGCONT);
         }
 
-        // Unlocking Critical section
-        sem_post(&shmPointer->sem_data_processed);
+        sem_post(&shmPointer->sem_lock);
 
-        usleep(shmPointer->tslice); // sleeping for tslice
+        usleep(shmPointer->tslice); 
 
-        // Locking critical section
-        sem_wait(&shmPointer->sem_data_processed);
+        
+        sem_wait(&shmPointer->sem_lock);
 
         for (int i = 0; i < numRunning; i++)
         {
-            if (kill(pid_running[i], SIGSTOP) == 0)
+            int status;
+            int pid;
+
+            kill(pid_running[i], SIGSTOP);
+            pid = waitpid(pid_running[i], &status, WNOHANG);
+            if (WIFEXITED(status))
+            {
+                printf("Process completed with pid %d with status %d\n", pid_running[i], status);
+            }
+            else if (WIFSTOPPED(status))
             {
                 pid_enqueue(pid_running[i]);
             }
-            else
-            {
-                printf("Process completed with pid %d", pid_running[i]);
-            }
         }
 
-        // Unlocking critical section
-        sem_post(&shmPointer->sem_data_available);
+        sem_post(&shmPointer->sem_lock);
+
     }
-    // LinkedList ready;
-    // initializeLinkedList(&ready);
 
     shm_unlink(path);
     munmap(shmPointer, sizeof(*shmPointer));

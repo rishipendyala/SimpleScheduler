@@ -25,8 +25,8 @@ typedef struct execInfo
 //
 typedef struct shmbuf
 {
-    sem_t sem_data_available;
-    sem_t sem_data_processed;
+    int isRunning;
+    sem_t sem_lock;
     int ncpu;
     int tslice;
     int pid_cnt;
@@ -72,7 +72,7 @@ void shm_init(char *shmpath, int ncpu, int tslice)
     }
 
     // Initialise semaphores
-    if (sem_init(&shmPointer->sem_data_available, 1, 0) == -1 || sem_init(&shmPointer->sem_data_processed, 1, 0) == -1)
+    if (sem_init(&shmPointer->sem_lock, 1, 1) == -1)
     {
         printf("Semaphore init failed\n");
         return;
@@ -80,24 +80,7 @@ void shm_init(char *shmpath, int ncpu, int tslice)
 
     shmPointer->ncpu = ncpu;
     shmPointer->tslice = tslice;
-
-    // Wait for a signal to proceed
-    if (sem_wait(&shmPointer->sem_data_available) == -1)
-    {
-        printf("Semaphore wait failed\n");
-        return;
-    }
-
-    // INSERT CODE to add process to the ready queue
-    
-
-    // Ready queue updated
-    // Update semaphore
-    if (sem_post(&shmPointer->sem_data_processed) == -1)
-    {
-        printf("Semaphore post failed\n");
-        return;
-    }
+    shmPointer->isRunning=1;
 }
 
 // prints the process information in the infoArray
@@ -132,6 +115,10 @@ void create_process_and_run(char **args, int argscount)
     if (strcmp(args[0], "submit") == 0)
     {
         isScheduled = 1;
+        for (int i = 1; i < 1000; i++)
+        {
+            args[i - 1] = args[i];
+        }
     }
     // creates a child process
     int status = fork();
@@ -144,14 +131,11 @@ void create_process_and_run(char **args, int argscount)
     {
         if (isScheduled)
         {
-            for (int i = 1; i < 1000; i++)
-            {
-                args[i - 1] = args[i];
-            }
-            int pid = getpid();
-            shmPointer->pids[shmPointer->pid_cnt] = pid;
+            sem_wait(&shmPointer->sem_lock);
+            shmPointer->pids[shmPointer->pid_cnt] = getpid();
             shmPointer->pid_cnt++;
-            kill(pid, SIGSTOP);
+            sem_post(&shmPointer->sem_lock);
+            kill(getpid(), SIGSTOP);
         }
         // history command can be executed
         if (strcmp(args[0], "history") == 0)
@@ -172,50 +156,43 @@ void create_process_and_run(char **args, int argscount)
     }
     else
     {
-        // variables required for processInfo
-        execInfo processInfo;
-        clock_t start_time;
-        clock_t end_time;
-        time_t timeExecuted;
-
-        // waiting and information that is required to calculate some execInfo
-        time(&timeExecuted);
-        start_time = clock();
-        int ret;
-        int pid = 0;
-
-        printf("Hello People\n");
         if (!isScheduled)
         {
-            pid = wait(&ret);
-            printf("Hello humans\n");
-        }
-        else
+            // variables required for processInfo
+            execInfo processInfo;
+            clock_t start_time;
+            clock_t end_time;
+            time_t timeExecuted;
+
+            // waiting and information that is required to calculate some execInfo
+            time(&timeExecuted);
+            start_time = clock();
+            int ret;
+            int pid = wait(&ret);
+
+            end_time = clock();
+            double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+
+            // checks if the command is safely executed
+            if (!WIFEXITED(ret))
+            {
+                printf("Abnormal termination of %d\n", pid);
+                return;
+            }
+
+            // saves all the execInfo
+            processInfo.pid = pid;
+            processInfo.timeExecuted = timeExecuted;
+            processInfo.duration = duration;
+            processInfo.exitStatus = WEXITSTATUS(ret);
+
+            // adds the processInfo to infoArray and updates its size
+            infoArray[currentInfo] = processInfo;
+            currentInfo++;
+        } else
         {
-            waitpid(status, &status, WNOHANG);
-            pid = status;
-            printf("Hello animals\n");
+            
         }
-        end_time = clock();
-        double duration = (double)(end_time - start_time) / CLOCKS_PER_SEC;
-        printf("Hello aliens\n");
-
-        // checks if the command is safely executed
-        if (!WIFEXITED(ret) && !isScheduled)
-        {
-            printf("Abnormal termination of %d\n", pid);
-            return;
-        }
-
-        // saves all the execInfo
-        processInfo.pid = pid;
-        processInfo.timeExecuted = timeExecuted;
-        processInfo.duration = duration;
-        processInfo.exitStatus = WEXITSTATUS(ret);
-
-        // adds the processInfo to infoArray and updates its size
-        infoArray[currentInfo] = processInfo;
-        currentInfo++;
     }
 }
 
@@ -263,6 +240,7 @@ void launch(char *userInput)
 // Ctrl+C input is redirected to this function
 void exit_program()
 {
+    shmPointer->isRunning=0;
     printProcessInfo();
     shm_unlink("Queue");
     munmap(shmPointer, sizeof(*shmPointer));
@@ -277,10 +255,11 @@ int main()
     scanf("%d", &ncpu);
     printf("Enter tslice in milliseconds: ");
     scanf("%d", &tslice);
-    tslice*=1000;
+    tslice *= 1000;
 
     char *path = "Queue";
     shm_init(path, ncpu, tslice);
+    
     // reads the ctrl+C input and redirects it to exit_program
     signal(SIGINT, exit_program);
 
